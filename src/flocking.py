@@ -1,5 +1,5 @@
 """
-This script solves the MFG of the flocking model.
+This script solves the MFG of the flocking model as presented in Probabilistic Theory of Mean Field Games with Applications Chapter 2.4
 I formulate it as an MDP:
     - X_i_t = speed of player i at time t
     - alpha_i_t = change of speed (or acceleration) of player i at time t. This will be the strategy to optimize
