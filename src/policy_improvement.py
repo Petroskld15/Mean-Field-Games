@@ -6,10 +6,9 @@ from numpy.linalg import norm
 import math
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
-import matplotlib as cm
 import os
 
-PATH_IMAGES = '/Users/msabate/Projects/Turing/Mean-Field-Games/images'
+PATH_IMAGES = '/Users/msabate/Projects/Turing/Mean-Field-Games/images' # save this
 
 
 class Policy_Iteration_Euler():    
@@ -25,7 +24,7 @@ class Policy_Iteration_Euler():
         self.init_t = init_t
         self.T = T
         self.n = 1 # step of iteration. VERY IMPORTANT
-        self.time = np.arange(self.init_t,self.T,0.01) # time is discretised in 1000 points
+        self.time = np.arange(self.init_t,self.T,0.001) # time is discretised in 1000 points
         self.init_p1 = None 
         self.init_p2 = None 
         self.p1_grid, self.p2_grid = [], []
@@ -146,6 +145,7 @@ class Policy_Iteration_Euler():
             - solution of ODE at time grid points. 
             
         Note: we use Simpson's rule to solve the integrals
+        Note: This ffunction still doesn't work. Need to be corrected
         """
         a0 = np.array(a0)
         a1 = np.array(a1)
@@ -155,32 +155,169 @@ class Policy_Iteration_Euler():
             val_integral1 = simps(integrand1, self.time[i:])
             integrand2 = a0[i:]
             for j in range(i+1,len(self.time)):
-                integrand3 = a1[i:j]
-                val_integral3 = simps(integrand3, self.time[i:j])
-                integrand2[j] = integrand2[j]*math.exp(-val_integral3)
+                print('i = {}, j = {}'.format(i,j))
+                integrand3 = a1[i:j+1]
+                val_integral3 = simps(integrand3, self.time[i:j+1])
+                integrand2[j-i] = integrand2[j-i]*math.exp(-val_integral3)
             val_integral2 = simps(integrand2, self.time[i:])
             res[i] = y_T * math.exp(-val_integral1) - val_integral2
         
         return res
+
+
+
+class HJB_LQR():
+    
+    def __init__(self, x_0=0, b=0.5, c=0.5, sigma=1, b_f=0.5, c_f=0.9, gamma=1, T=10, init_t = 9, solve_ode=True):
+        self.x_0 = x_0
+        self.b = b
+        self.c = c
+        self.sigma = sigma
+        self.b_f = b_f
+        self.c_f = c_f
+        self.gamma = gamma
+        self.init_t = init_t
+        self.T = T
+        self.time = np.arange(self.init_t,self.T,0.01) # time is discretised in 1000 points
+        self.beta, self.phi, self.delta = None, None, None # this will store the functions beta(t), phi(t)
+        self.solve_ode = solve_ode
+    
+    def _system_odes(self):
+
+        beta0 = np.ones(self.time.shape[0])*(-self.b_f)
+        beta1 = np.ones(self.time.shape[0])*(-2*self.b)
+        beta2 = np.ones(self.time.shape[0])* (self.c**2 / self.c_f)
+        self.beta = self._solve_ode_explicit(beta0, beta1, beta2, self.gamma)
+        
+        delta0 = np.zeros(self.time.shape[0])
+        delta1 = np.ones(self.time.shape[0])*(-self.b+self.beta*self.c**2/self.c_f)
+        delta2 = np.zeros(self.time.shape[0]) 
+        self.delta = self._solve_ode_explicit(delta0, delta1, delta2, 0)
+        
+        phi0 = -self.beta * self.sigma**2 + self.c**2/(4*self.c_f) * self.delta**2
+        phi1 = np.zeros(self.time.shape[0])
+        phi2 = np.zeros(self.time.shape[0])
+        self.phi = self._solve_ode_explicit(phi0, phi1, phi2, 0)
+    
+    def _explicit_solution(self):
+        A = -self.c**2 / self.c**2
+        B = math.sqrt(-self.b**2 - A*self.b_f)
+        C = math.sqrt(B)
+        # TODO
+        return 1    
+    
+    def _explicit_solution(self):
+        return 1
+    
+    def get_value_function(self,x): 
+        if self.solve_ode:
+            self._system_odes()
+            res = (x**2)*self.beta + x*self.delta + self.phi
+            return res
+        else:
+            #TODO
+            return 1
+        
+    def get_alpha(self, x):
+        if self.solve_ode:
+            self._system_odes()
+            res = -self.c/self.c_f * self.beta * x
+            return res
+        else:
+            return 1
+
+
             
+    def _solve_ode_explicit(self, a0, a1, a2, y_T):
+        """
+        This function solves a specific type of ODE: dy(t)=(a0(t) + a1(t)*y(t))dt; y(T) = gamma
+        
+        Input:
+            - a0: function
+            - a1: function
+            - y_T: value of y(T)
+        
+        Output:
+            - solution of ODE at time grid points. 
+        Note: this is solved using Euler method
+        """
+        a0 = np.array(a0)
+        a1 = np.array(a1)
+        a2 = np.array(a2)
+        res = np.zeros(self.time.shape[0])            
+        y0 = y_T
+        #res = [0]*len(self.time)
+        res[-1] = y0
+        for t in range(len(self.time)-1, 0, -1):
+            m = a0[t]+a1[t]*res[t]+(a2[t]*res[t]**2)
+            y1 = y0 - m*(self.time[t]-self.time[t-1])
+            res[t-1] = y1
+            y0 = y1
+        return res
+    
+    
+    
 
 
+
+def compare_ode_implementations():
+    pol1 = Policy_Iteration_Euler()
+    x = np.linspace(0,100,101)
+    n_iterations=10
+    
+    alphas = []
+    value_functions = []
+    
+    alpha = np.array([pol.get_alpha(x_i) for x_i in x]) # initial guess for alpha on the grid of points
+    alphas.append(alpha)
+    
+    for i in range(n_iterations):
+        pol1.evaluation_step()
+        alpha = np.array([pol1.get_alpha(x_i) for x_i in x])
+        alphas.append(alpha)
+        value = np.array([pol1.get_value_function(x_i) for x_i in x])
+        value_functions.append(value)
+    
+    diff_alphas = [norm(alphas[i+1]-alphas[i], ord='fro') for i in range(len(alphas)-1)]
+    diff_value = [norm(value_functions[i+1]-value_functions[i], ord='fro') for i in range(len(value_functions)-1)]
+    
+    pol2 = Policy_Iteration_Euler(solver='Explicit')
+    x = np.linspace(0,100,101)
+    n_iterations=10
+    
+    alphas = []
+    value_functions = []
+    
+    alpha = np.array([pol.get_alpha(x_i) for x_i in x]) # initial guess for alpha on the grid of points
+    alphas.append(alpha)
+    
+    for i in range(n_iterations):
+        pol2.evaluation_step()
+        alpha = np.array([pol2.get_alpha(x_i) for x_i in x])
+        alphas.append(alpha)
+        value = np.array([pol2.get_value_function(x_i) for x_i in x])
+        value_functions.append(value)
+    
+    diff_alphas = [norm(alphas[i+1]-alphas[i], ord='fro') for i in range(len(alphas)-1)]
+    diff_value = [norm(value_functions[i+1]-value_functions[i], ord='fro') for i in range(len(value_functions)-1)]
+      
+
         
         
         
         
-def iterate():
-    x_0 = 1
-    b = 1
-    c = 1
-    sigma = 1
-    b_f = 1
-    c_f = 100
-    gamma = 100
-    T = 10
-    init_t = 0
-    n_iterations = 20   
-    solver = 'Euler'
+def iterate(x_0, b, c, b_f, c_f, gamma, T, init_t, n_iterations, solver):
+#    x_0 = 1
+#    b = 1
+#    c = 1
+#    sigma = 1
+#    b_f = 1
+#    c_f = 100
+#    gamma = 100
+#    T = 10
+#    init_t = 0
+#    n_iterations = 20   
+#    solver = 'Euler'
         
         
 #    pol = Policy_Iteration_Euler(x_0=x_0, b=b, c=c, sigma=sigma, b_f=b_f, c_f=c_f, 
@@ -211,8 +348,20 @@ def iterate():
 
 
 if __name__=='__main__':
+    x_0 = 1
+    b = 1
+    c = 1
+    sigma = 1
+    b_f = 1
+    c_f = 100
+    gamma = 100
+    T = 10
+    init_t = 0
+    n_iterations = 20   
+    solver = 'Euler'    
     
-    pol, alphas, value_functions, diff_alphas, diff_value = iterate()
+    # new Policy Iteration
+    pol, alphas, value_functions, diff_alphas, diff_value = iterate(x_0, b, c, b_f, c_f, gamma, T, init_t, n_iterations, solver)
     X = np.linspace(0,100,101)
     Y = pol.time
     X_grid, Y_grid = np.meshgrid(X,Y)
@@ -237,7 +386,14 @@ if __name__=='__main__':
         fig.savefig(os.path.join(PATH_IMAGES, 'value_function_iteration'+str(i)+'png'))
 
 
-
+    # we compare with explicit HJB solution
+    x = np.linspace(0,100,101)
+    hjb = HJB_LQR()
+    alpha = np.array([hjb.get_alpha(x_i) for x_i in x])
+    value = np.array([hjb.get_value_function(x_i) for x_i in x])
+    diff_alpha_HJB_iteration = norm(alphas[-1]-alpha, ord='fro')
+    diff_value_HJB_iteration = norm(value_functions[-1]-value, ord='fro')
+    
 
 
 
