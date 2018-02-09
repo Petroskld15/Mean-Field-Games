@@ -24,7 +24,7 @@ class Policy_Iteration_Euler():
         self.init_t = init_t
         self.T = T
         self.n = 1 # step of iteration. VERY IMPORTANT
-        self.time = np.arange(self.init_t,self.T,0.001) # time is discretised in 1000 points
+        self.time = np.arange(self.init_t,self.T,0.01) # time is discretised in 1000 points
         self.init_p1 = None 
         self.init_p2 = None 
         self.p1_grid, self.p2_grid = [], []
@@ -152,14 +152,14 @@ class Policy_Iteration_Euler():
         res = np.zeros(self.time.shape[0])            
         for i in range(len(self.time)):
             integrand1 = a1[i:]
-            val_integral1 = simps(integrand1, self.time[i:])
+            val_integral1 = simps(integrand1, self.time[i:]) # integral1 = int_s^T a1(t)dt
             integrand2 = a0[i:]
             for j in range(i+1,len(self.time)):
                 print('i = {}, j = {}'.format(i,j))
-                integrand3 = a1[i:j+1]
-                val_integral3 = simps(integrand3, self.time[i:j+1])
-                integrand2[j-i] = integrand2[j-i]*math.exp(-val_integral3)
-            val_integral2 = simps(integrand2, self.time[i:])
+                integrand3 = a1[i:j]
+                val_integral3 = simps(integrand3, self.time[i:j]) # integral3 = int_s^t a1(r)dr
+                integrand2[j-i-1] = integrand2[j-i-1]*math.exp(-val_integral3)
+            val_integral2 = simps(integrand2, self.time[i:])  # integral2 = int_s^T[a0(t)exp[-int_s^t a1(r)dr]]dt
             res[i] = y_T * math.exp(-val_integral1) - val_integral2
         
         return res
@@ -268,7 +268,7 @@ def compare_ode_implementations():
     alphas = []
     value_functions = []
     
-    alpha = np.array([pol.get_alpha(x_i) for x_i in x]) # initial guess for alpha on the grid of points
+    alpha = np.array([pol1.get_alpha(x_i) for x_i in x]) # initial guess for alpha on the grid of points
     alphas.append(alpha)
     
     for i in range(n_iterations):
@@ -285,20 +285,20 @@ def compare_ode_implementations():
     x = np.linspace(0,100,101)
     n_iterations=10
     
-    alphas = []
-    value_functions = []
+    alphas2 = []
+    value_functions2 = []
     
-    alpha = np.array([pol.get_alpha(x_i) for x_i in x]) # initial guess for alpha on the grid of points
-    alphas.append(alpha)
+    alpha = np.array([pol2.get_alpha(x_i) for x_i in x]) # initial guess for alpha on the grid of points
+    alphas2.append(alpha)
     
     for i in range(n_iterations):
         pol2.evaluation_step()
         alpha = np.array([pol2.get_alpha(x_i) for x_i in x])
-        alphas.append(alpha)
+        alphas2.append(alpha)
         value = np.array([pol2.get_value_function(x_i) for x_i in x])
-        value_functions.append(value)
+        value_functions2.append(value)
     
-    diff_alphas = [norm(alphas[i+1]-alphas[i], ord='fro') for i in range(len(alphas)-1)]
+    diff_alphas = [norm(alphas2[i+1]-alphas2[i], ord='fro') for i in range(len(alphas2)-1)]
     diff_value = [norm(value_functions[i+1]-value_functions[i], ord='fro') for i in range(len(value_functions)-1)]
       
 
@@ -394,7 +394,8 @@ if __name__=='__main__':
     diff_alpha_HJB_iteration = norm(alphas[-1]-alpha, ord='fro')
     diff_value_HJB_iteration = norm(value_functions[-1]-value, ord='fro')
     
-
+    # get difference between value function of the iterative method and explicit solution
+    diff_value_HJB_iterative_method = [norm(val_iterative-value, ord='fro') for val_iterative in value_functions]
 
 
 
