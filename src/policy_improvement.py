@@ -55,11 +55,7 @@ class Policy_Iteration_Euler():
         phi_array = np.array(self.phi[-1])
         res = (x**2)*beta_array + x*delta_array + phi_array
         return res
-    
-    def improvement_step(self):
-        # we get the new alpha in terms of the solution of the HJB
-        self.n = self.n+1 # just a counter of the iterations
-        self.alpha = self.p1[-1]*self.x + self.p2[-1]   
+     
 
     def evaluation_step(self):
         """
