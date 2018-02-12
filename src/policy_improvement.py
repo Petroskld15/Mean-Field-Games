@@ -13,7 +13,7 @@ PATH_IMAGES = '/Users/msabate/Projects/Turing/Mean-Field-Games/images' # save th
 
 class Policy_Iteration_Euler():    
     
-    def __init__(self, x_0=0, b=0.5, c=0.5, sigma=1, b_f=0.5, c_f=0.9, gamma=1, T=10, init_t = 9, solver='Euler'):
+    def __init__(self, x_0=0, b=0.5, c=0.5, sigma=1, b_f=0.5, c_f=0.9, gamma=1, T=10, init_t = 9, solver='Euler', timestep=0.05):
         self.x_0 = x_0
         self.b = b
         self.c = c
@@ -24,7 +24,8 @@ class Policy_Iteration_Euler():
         self.init_t = init_t
         self.T = T
         self.n = 1 # step of iteration. VERY IMPORTANT
-        self.time = np.arange(self.init_t,self.T,0.01) # time is discretised in 1000 points
+        self.timestep = 0.05
+        self.time = np.arange(self.init_t,self.T+0.1*timestep,timestep) # time is discretised in 1000 points
         self.init_p1 = None 
         self.init_p2 = None 
         self.p1_grid, self.p2_grid = [], []
@@ -37,7 +38,7 @@ class Policy_Iteration_Euler():
         Alpha_0 needs to be linear in x
         """
         #self.p1 = self.t  
-        self.init_p1= lambda t: 1-1/t
+        self.init_p1= lambda t: -0.5
         self.init_p2 = lambda t: 0.1
         self.p1_grid.append(np.array([self.init_p1(t) for t in self.time]))
         self.p2_grid.append(np.array([self.init_p2(t) for t in self.time]))
@@ -145,26 +146,32 @@ class Policy_Iteration_Euler():
         """
         a0 = np.array(a0)
         a1 = np.array(a1)
-        res = np.zeros(self.time.shape[0])            
+        integrand_const = -a1
+        val_integral_const = simps(integrand_const, self.time)
+        sol = np.zeros_like(self.time)
         for i in range(len(self.time)):
-            integrand1 = a1[i:]
-            val_integral1 = simps(integrand1, self.time[i:]) # integral1 = int_s^T a1(t)dt
-            integrand2 = a0[i:]
-            for j in range(i+1,len(self.time)):
-                print('i = {}, j = {}'.format(i,j))
-                integrand3 = a1[i:j]
-                val_integral3 = simps(integrand3, self.time[i:j]) # integral3 = int_s^t a1(r)dr
-                integrand2[j-i-1] = integrand2[j-i-1]*math.exp(-val_integral3)
-            val_integral2 = simps(integrand2, self.time[i:])  # integral2 = int_s^T[a0(t)exp[-int_s^t a1(r)dr]]dt
-            res[i] = y_T * math.exp(-val_integral1) - val_integral2
-        
-        return res
+            integrand2 = np.copy(a0[i:])
+            for j in range(i, len(self.time)):
+                integrand3 = -np.copy(a1[:j+1])
+                val_integral3 = simps(integrand3, self.time[:j+1])
+                integrand2[j-i] = integrand2[j-i]*math.exp(val_integral3)
+            val_integral2 = simps(integrand2, self.time[i:])
+            integrand4 = -a1[:i+1]
+            try:
+                val_integral4 = simps(integrand4, self.time[:i+1])
+            except:
+                val_integral4 = 0
+            #sol[i] = math.exp(-val_integral4)*(y_T*math.exp(val_integral_const) - val_integral2)
+            sol[i] = y_T*math.exp(val_integral_const-val_integral4) - math.exp(-val_integral4)*val_integral2
+        return(sol)
+    
+    
 
 
 
 class HJB_LQR():
     
-    def __init__(self, x_0=0, b=0.5, c=0.5, sigma=1, b_f=0.5, c_f=0.9, gamma=1, T=10, init_t = 9, solve_ode=True):
+    def __init__(self, x_0=0, b=0.5, c=0.5, sigma=1, b_f=0.5, c_f=0.9, gamma=1, T=10, init_t = 9, solve_ode=True, timestep=0.05):
         self.x_0 = x_0
         self.b = b
         self.c = c
@@ -174,7 +181,8 @@ class HJB_LQR():
         self.gamma = gamma
         self.init_t = init_t
         self.T = T
-        self.time = np.arange(self.init_t,self.T,0.01) # time is discretised in 1000 points
+        self.timestep = timestep
+        self.time = np.arange(self.init_t,self.T+0.1*timestep,timestep) # time is discretised in 1000 points
         self.beta, self.phi, self.delta = None, None, None # this will store the functions beta(t), phi(t)
         self.solve_ode = solve_ode
     
@@ -250,6 +258,7 @@ class HJB_LQR():
             res[t-1] = y1
             y0 = y1
         return res
+
     
     
     
@@ -302,7 +311,7 @@ def compare_ode_implementations():
         
         
         
-def iterate(x_0, b, c, b_f, c_f, gamma, T, init_t, n_iterations, solver):
+def iterate(x_0, b, c, b_f, c_f, gamma, T, init_t, n_iterations, solver, timestep):
 #    x_0 = 1
 #    b = 1
 #    c = 1
@@ -316,11 +325,11 @@ def iterate(x_0, b, c, b_f, c_f, gamma, T, init_t, n_iterations, solver):
 #    solver = 'Euler'
         
         
-#    pol = Policy_Iteration_Euler(x_0=x_0, b=b, c=c, sigma=sigma, b_f=b_f, c_f=c_f, 
-#                                 gamma=gamma, T=T, init_t =init_t, solver=solver)
-    pol = Policy_Iteration_Euler()
+    pol = Policy_Iteration_Euler(x_0=x_0, b=b, c=c, sigma=sigma, b_f=b_f, c_f=c_f, 
+                                 gamma=gamma, T=T, init_t =init_t, solver=solver, timestep=timestep)
+    #pol = Policy_Iteration_Euler()
     x = np.linspace(0,100,101)
-    n_iterations=10
+    n_iterations=50
     
     alphas = []
     value_functions = []
@@ -329,6 +338,7 @@ def iterate(x_0, b, c, b_f, c_f, gamma, T, init_t, n_iterations, solver):
     alphas.append(alpha)
     
     for i in range(n_iterations):
+        print('iteration = {}'.format(i))
         pol.evaluation_step()
         alpha = np.array([pol.get_alpha(x_i) for x_i in x])
         alphas.append(alpha)
@@ -349,15 +359,16 @@ if __name__=='__main__':
     c = 1
     sigma = 1
     b_f = 1
-    c_f = 100
-    gamma = 100
+    c_f = 1
+    gamma = 0
     T = 10
-    init_t = 0
-    n_iterations = 20   
-    solver = 'Euler'    
+    init_t = 9
+    n_iterations = 50   
+    solver = 'explicit'    
+    timestep = 0.005
     
     # new Policy Iteration
-    pol, alphas, value_functions, diff_alphas, diff_value = iterate(x_0, b, c, b_f, c_f, gamma, T, init_t, n_iterations, solver)
+    pol, alphas, value_functions, diff_alphas, diff_value = iterate(x_0, b, c, b_f, c_f, gamma, T, init_t, n_iterations, solver, timestep)
     X = np.linspace(0,100,101)
     Y = pol.time
     X_grid, Y_grid = np.meshgrid(X,Y)
@@ -384,7 +395,7 @@ if __name__=='__main__':
 
     # we compare with explicit HJB solution
     x = np.linspace(0,100,101)
-    hjb = HJB_LQR()
+    hjb = HJB_LQR(b=b, c=c, sigma=sigma, b_f=b_f, c_f=c_f, gamma=gamma, T=T, init_t = init_t, solve_ode=True, timestep=timestep)
     alpha = np.array([hjb.get_alpha(x_i) for x_i in x])
     value = np.array([hjb.get_value_function(x_i) for x_i in x])
     diff_alpha_HJB_iteration = norm(alphas[-1]-alpha, ord='fro')
