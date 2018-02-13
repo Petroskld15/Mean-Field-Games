@@ -12,14 +12,15 @@ with solution:
 """
 import numpy as np
 import math
-from scipy.integrate import simps
-
+from scipy.integrate import simps, trapz
+import time as temps
+from numpy.linalg import norm
 
 # FIRST IMPLEMENTATION using integrating factor. ODE with terminal condition
-timestep = 0.01
+timestep = 0.0001
 t0 = 8
 T = 10
-time = np.arange(t0,T+timestep,timestep)
+time = np.arange(t0,T+timestep*0.1,timestep)
 
 
 a0_lambda = lambda t: t
@@ -33,6 +34,7 @@ a1 = np.array([a1_lambda(t) for t in time])
 integrand_const = -a1
 val_integral_const = simps(integrand_const, time)
 sol = np.zeros_like(time)
+start = temps.time()
 for i in range(len(time)):
     integrand2 = np.copy(a0[i:])
     for j in range(i, len(time)):
@@ -46,7 +48,7 @@ for i in range(len(time)):
     except:
         val_integral4 = 0
     sol[i] = math.exp(-val_integral4)*(y_T*math.exp(val_integral_const) - val_integral2)
-
+print('execution time: {:.3f}'.format(temps.time()-start))
 
       
 # euler method of same equation
@@ -67,6 +69,53 @@ sol_grid = np.array([expl_sol(t) for t in time])
 
 norm(sol_grid-sol_euler)  
 norm(sol_grid-sol)   # much better this solution than Euler method
+
+
+#### Second implementation using integrating factor. ODE with terminal condition
+# we try to make it faster by doing clever things with the integrals
+# we calculate the integrals bit by bit and then do a cumsum.
+# like this the algorithm will be much faster
+integrand_const = -a1
+val_integral_const = simps(integrand_const, time)
+sol = np.zeros_like(time)
+integrand2 = np.zeros_like(time)
+val_integral2 = np.zeros_like(time)
+val_integral3 = np.zeros_like(time)
+val_integral4 = np.zeros_like(time)
+
+# we fill integrand4
+for i in range(1,len(time)):
+    integrand4 = -np.copy(a1[i-1:i+1])
+    val = simps(integrand4, time[i-1:i+1])
+    val_integral4[i] = val
+val_integral4 = np.cumsum(val_integral4)
+e_integral4 = np.exp(-val_integral4)
+
+# we fill val integral3
+for i in range(1,len(time)):
+    integrand3 = -np.copy(a1[i-1:i+1])
+    val = simps(integrand3, time[i-1:i+1])
+    val_integral3[i] = val
+val_integral3 = np.cumsum(val_integral3)
+
+# we get integrand2
+integrand2 = a0 * np.exp(val_integral3)
+
+# we get val_integral2
+for i in range(len(time)-1,0,-1):
+    val = simps(integrand2[i-1:i+1], time[i-1:i+1])
+    val_integral2[i-1] = val
+
+val_integral2 = np.flip(np.cumsum(np.flip(val_integral2,axis=0)),axis=0)
+
+solution_ode = e_integral4*(y_T*math.exp(val_integral_const)-val_integral2)
+
+    
+    
+
+
+
+
 
 
 # WITH INITIAL CONDITION AND NOT FINAL CONDITION

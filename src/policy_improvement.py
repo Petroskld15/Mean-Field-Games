@@ -148,22 +148,38 @@ class Policy_Iteration_Euler():
         a1 = np.array(a1)
         integrand_const = -a1
         val_integral_const = simps(integrand_const, self.time)
-        sol = np.zeros_like(self.time)
-        for i in range(len(self.time)):
-            integrand2 = np.copy(a0[i:])
-            for j in range(i, len(self.time)):
-                integrand3 = -np.copy(a1[:j+1])
-                val_integral3 = simps(integrand3, self.time[:j+1])
-                integrand2[j-i] = integrand2[j-i]*math.exp(val_integral3)
-            val_integral2 = simps(integrand2, self.time[i:])
-            integrand4 = -a1[:i+1]
-            try:
-                val_integral4 = simps(integrand4, self.time[:i+1])
-            except:
-                val_integral4 = 0
-            #sol[i] = math.exp(-val_integral4)*(y_T*math.exp(val_integral_const) - val_integral2)
-            sol[i] = y_T*math.exp(val_integral_const-val_integral4) - math.exp(-val_integral4)*val_integral2
-        return(sol)
+        integrand2 = np.zeros_like(self.time)
+        val_integral2 = np.zeros_like(self.time)
+        val_integral3 = np.zeros_like(self.time)
+        val_integral4 = np.zeros_like(self.time)
+        
+        # we fill integrand4
+        for i in range(1,len(self.time)):
+            integrand4 = -np.copy(a1[i-1:i+1])
+            val = simps(integrand4, self.time[i-1:i+1])
+            val_integral4[i] = val
+        val_integral4 = np.cumsum(val_integral4)
+        e_integral4 = np.exp(-val_integral4)
+        
+        # we fill val integral3
+        for i in range(1,len(self.time)):
+            integrand3 = -np.copy(a1[i-1:i+1])
+            val = simps(integrand3, self.time[i-1:i+1])
+            val_integral3[i] = val
+        val_integral3 = np.cumsum(val_integral3)
+        
+        # we get integrand2
+        integrand2 = a0 * np.exp(val_integral3)
+        
+        # we get val_integral2
+        for i in range(len(self.time)-1,0,-1):
+            val = simps(integrand2[i-1:i+1], self.time[i-1:i+1])
+            val_integral2[i-1] = val
+        
+        val_integral2 = np.flip(np.cumsum(np.flip(val_integral2,axis=0)),axis=0)
+        
+        solution_ode = e_integral4*(y_T*math.exp(val_integral_const)-val_integral2)
+        return(solution_ode)
     
     
 
@@ -365,7 +381,7 @@ if __name__=='__main__':
     init_t = 9
     n_iterations = 50   
     solver = 'explicit'    
-    timestep = 0.005
+    timestep = 0.0005
     
     # new Policy Iteration
     pol, alphas, value_functions, diff_alphas, diff_value = iterate(x_0, b, c, b_f, c_f, gamma, T, init_t, n_iterations, solver, timestep)
