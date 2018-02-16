@@ -1,12 +1,13 @@
 # THIRD IMPLEMENTATION: we solve the ODE directly using Euler
 ###### SECOND IMPLEMENTATION USING SCIPY
-from scipy.integrate import quad, ode, odeint, simps
+from scipy.integrate import quad, ode, odeint, simps, trapz
 import numpy as np
 from numpy.linalg import norm
 import math
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 import os
+import pandas as pd
 
 PATH_IMAGES = '/Users/msabate/Projects/Turing/Mean-Field-Games/images' # save this
 
@@ -167,28 +168,39 @@ class Policy_Iteration_Euler():
         a1 = np.array(a1)
         integrand_const = -a1
         val_integral_const = simps(integrand_const, self.time)
-        sol = np.zeros_like(self.time)
-        for i in range(len(self.time)):
-            integrand2 = np.copy(a0[i:])
-            for j in range(i, len(self.time)):
-                integrand3 = -np.copy(a1[:j+1])
-                val_integral3 = simps(integrand3, self.time[:j+1])
-                integrand2[j-i] = integrand2[j-i]*math.exp(val_integral3)
-            val_integral2 = simps(integrand2, self.time[i:])
-            integrand4 = -a1[:i+1]
-            try:
-                val_integral4 = simps(integrand4, self.time[:i+1])
-            except:
-                val_integral4 = 0
-            #sol[i] = math.exp(-val_integral4)*(y_T*math.exp(val_integral_const) - val_integral2)
-            sol[i] = y_T*math.exp(val_integral_const-val_integral4) - math.exp(-val_integral4)*val_integral2
-        return(sol)
+        integrand2 = np.zeros_like(self.time)
+        val_integral2 = np.zeros_like(self.time)
+        val_integral3 = np.zeros_like(self.time)
+        val_integral4 = np.zeros_like(self.time)
+        
+        # we fill integrand4
+        for i in range(1,len(self.time)):
+            integrand4 = -np.copy(a1[i-1:i+1])
+            val = simps(integrand4, self.time[i-1:i+1])
+            val_integral4[i] = val
+        val_integral4 = np.cumsum(val_integral4)
+        e_integral4 = np.exp(-val_integral4)
+        
+        # we fill val integral3
+        for i in range(1,len(self.time)):
+            integrand3 = -np.copy(a1[i-1:i+1])
+            val = simps(integrand3, self.time[i-1:i+1])
+            val_integral3[i] = val
+        val_integral3 = np.cumsum(val_integral3)
+        
+        # we get integrand2
+        integrand2 = a0 * np.exp(val_integral3)
+        
+        # we get val_integral2
+        for i in range(len(self.time)-1,0,-1):
+            val = simps(integrand2[i-1:i+1], self.time[i-1:i+1])
+            val_integral2[i-1] = val
+        
+        val_integral2 = np.flip(np.cumsum(np.flip(val_integral2,axis=0)),axis=0)
+        
+        solution_ode = e_integral4*(y_T*math.exp(val_integral_const)-val_integral2)
+        return(solution_ode)
     
-
-
-
-
-
 
 class MFG():
     """
@@ -228,9 +240,10 @@ class MFG():
                                      gamma=self.gamma, T=self.T,init_t=self.init_t, solver=self.solver,
                                      init_p1 = self.p1, init_p2=self.p2, p3=self.p3, law = self.law[-1],
                                      timestep=self.timestep)
+           
         x = np.linspace(0,100,101)
         step = 0
-        tol = 0.0001
+        tol = 0.00001
         diff = 1
         alphas = []
         value_functions = []
@@ -249,6 +262,17 @@ class MFG():
         
         return pol
     
+    def policy_one_step(self, pol=None):
+        if pol is None:
+            pol = Policy_Iteration_Euler(b=self.b, c=self.c, m=self.m, sigma=self.sigma, 
+                                 b_f=self.b_f, c_f=self.c_f, d_f=self.d_f, e_f=self.e_f,
+                                 gamma=self.gamma, T=self.T,init_t=self.init_t, solver=self.solver,
+                                 init_p1 = self.p1, init_p2=self.p2, p3=self.p3, law = self.law[-1],
+                                 timestep=self.timestep)
+        pol.evaluation_step()
+        return pol
+        
+    
     def update_law(self, pol):
         
         p1_grid = pol.p1_grid[-1]
@@ -260,11 +284,11 @@ class MFG():
         a1 = self.b + self.c*p1_grid + self.c*p3_grid + self.m
         
         y_0 = self.law_0
-        current_law = self._solve_ode_euler(a0,a1,y_0)
-#        if self.solver == 'Euler':
-#            current_law = self._solve_ode_euler(a0,a1,y_0)
-#        else:
-#            current_law = self._solve_ode_explicit(a0,a1,y_0)
+        #current_law = self._solve_ode_euler(a0,a1,y_0)
+        if self.solver == 'Euler':
+            current_law = self._solve_ode_euler(a0,a1,y_0)
+        else:
+            current_law = self._solve_ode_explicit(a0,a1,y_0)
         self.law.append(np.array(current_law))
 
     
@@ -309,84 +333,96 @@ class MFG():
         """
         a0 = np.array(a0)
         a1 = np.array(a1)
-        sol = np.zeros_like(self.time)
-        for i in range(len(self.time)):
-            integrand1 = -a1[:i+1]
-            val_integral1 = simps(integrand1, self.time[:i+1])
-            integrand2 = np.copy(a0[:i+1])
-            for j in range(i):
-                integrand3 = -np.copy(a1[:j+1])
-                val_integral3 = simps(integrand3, self.time[:j+1])
-                integrand2[j] = integrand2[j]*math.exp(val_integral3)
-            val_integral2 = simps(integrand2, self.time[:i+1])
-            sol[i] = math.exp(-val_integral1)*(y_0+val_integral2)
-        return sol
+        val_integral1 = np.zeros_like(self.time)
+        val_integral2 = np.zeros_like(self.time)
+        val_integral3 = np.zeros_like(self.time)
+        
+        # we fill val_integral1
+        for i in range(1, len(self.time)):
+            integrand1 = -np.copy(a1[i-1:i+1])
+            val_integral1[i] = trapz(integrand1, self.time[i-1:i+1])
+        val_integral1 = np.cumsum(val_integral1)
+        e_integral1 = np.exp(-val_integral1)
+        
+        # we fill val_integral3
+        for i in range(1, len(self.time)):
+            val_integral3[i] = trapz(-a1[i-1:i+1], self.time[i-1:i+1])
+        val_integral3 = np.cumsum(val_integral3)
+        
+        # we get integrand2
+        integrand2 = a0 * np.exp(val_integral3)
+        for i in range(1, len(self.time)):
+            val_integral2[i] = trapz(integrand2[i-1:i+1], self.time[i-1:i+1])
+        val_integral2 = np.cumsum(val_integral2) 
+        
+        solution_ode = e_integral1*(y_0 + val_integral2)
+        return solution_ode
         
     
                     
 game = MFG(init_t=9, timestep=0.005,T=10)            
 law = game.law[-1]
 
-# DEbUGGING Policy Iteration
-pol = Policy_Iteration_Euler(law=law,timestep=0.005, init_t=9,T=10, solver='explicit')
-pol.p1_grid
-pol.p2_grid
-pol.law_grid
-#pol.p2_debug
-x = np.linspace(0,100,101)
-n_iterations=10
-
-alphas = []
-value_functions = []
-
-alpha = np.array([pol.get_alpha(x_i) for x_i in x]) # initial guess for alpha on the grid of points
-alphas.append(alpha)
-alphas
-
-for i in range(n_iterations):
-    print(i)
-    pol.evaluation_step()
-    alpha = np.array([pol.get_alpha(x_i) for x_i in x])
-    alphas.append(alpha)
-    value = np.array([pol.get_value_function(x_i) for x_i in x])
-    value_functions.append(value)
-
-diff_alphas = [norm(alphas[i+1]-alphas[i], ord='fro') for i in range(len(alphas)-1)]
-diff_value = [norm(value_functions[i+1]-value_functions[i], ord='fro') for i in range(len(value_functions)-1)]
-     
-
-# DEBUGGING MFG
-game = MFG(init_t=9, T=10, timestep=0.005, solver='explicit') # we need to use explicit solution of ODEs! Euler method creates errors
-pol = game.solve_policy()
-pol.p1_grid
-pol.p2_grid
-game.update_law(pol)
-game.law
-pol = game.solve_policy()
-pol.p2_grid[-1]
-pol.p1_grid[-1]
-game.update_law(pol)
+## DEbUGGING Policy Iteration
+#pol = Policy_Iteration_Euler(law=law,timestep=0.005, init_t=9,T=10, solver='explicit')
+#pol.p1_grid
+#pol.p2_grid
+#pol.law_grid
+##pol.p2_debug
+#x = np.linspace(0,100,101)
+#n_iterations=10
+#
+#alphas = []
+#value_functions = []
+#
+#alpha = np.array([pol.get_alpha(x_i) for x_i in x]) # initial guess for alpha on the grid of points
+#alphas.append(alpha)
+#alphas
+#
+#for i in range(n_iterations):
+#    print(i)
+#    pol.evaluation_step()
+#    alpha = np.array([pol.get_alpha(x_i) for x_i in x])
+#    alphas.append(alpha)
+#    value = np.array([pol.get_value_function(x_i) for x_i in x])
+#    value_functions.append(value)
+#
+#diff_alphas = [norm(alphas[i+1]-alphas[i], ord='fro') for i in range(len(alphas)-1)]
+#diff_value = [norm(value_functions[i+1]-value_functions[i], ord='fro') for i in range(len(value_functions)-1)]
+#     
+#
+## DEBUGGING MFG
+#game = MFG(init_t=9, T=10, timestep=0.005, solver='explicit') # we need to use explicit solution of ODEs! Euler method creates errors
+#pol = game.solve_policy()
+#pol.p1_grid
+#pol.p2_grid
+#game.update_law(pol)
+#game.law
+#pol = game.solve_policy()
+#pol.p2_grid[-1]
+#pol.p1_grid[-1]
+#game.update_law(pol)
 
 
 #####################
 # general algorithm #
 #####################
-x = np.linspace(0,100,101)
-game = MFG(init_t=8, timestep=0.05, T=10, solver='explicit') # we need to use explicit solution of ODEs! Euler method creates errors
-pol = game.solve_policy()
-game.update_law(pol)
-pol = game.solve_policy()
-game.update_law(pol)
-diff = norm(game.law[-1]-game.law[-2])
-while diff>0.0001:
-    print(diff)
-    pol = game.solve_policy()
-    game.update_law(pol)
-    diff = norm(game.law[-1]-game.law[-2])
-print('success')
-pol = game.solve_policy()   # we get the alphas with the las value of the law
-final_law = game.law[-1]
-final_alpha = np.array([pol.get_alpha(x_i) for x_i in x])    
+#x = np.linspace(0,100,101)
+#game = MFG(init_t=8, timestep=0.05, T=10, solver='explicit') # we need to use explicit solution of ODEs! Euler method creates errors
+#pol = game.solve_policy()
+#game.update_law(pol)
+#pol = game.solve_policy()
+#game.update_law(pol)
+#diff = norm(game.law[-1]-game.law[-2])
+#while diff>0.0001:
+#    print(diff)
+#    pol = game.solve_policy()
+#    game.update_law(pol)
+#    diff = norm(game.law[-1]-game.law[-2])
+#print('success')
+#pol = game.solve_policy()   # we get the alphas with the las value of the law
+#final_law = game.law[-1]
+#final_alpha = np.array([pol.get_alpha(x_i) for x_i in x])    
             
     
 # compare with Explicit solution of Flocking model
@@ -419,7 +455,7 @@ class flocking_model():
         return alpha
         
 
-# we compare both methods: THE BELOW CONFIGURATION WORKS AND CONVERGES UP UNTIL CERTAIN POINT
+# we compare both methods: THE BELOW CONFIGURATION CONVERGES 
 kappa = 1
 flocking_MFG = MFG(b=0, c=1, m=0, sigma=1, 
                    b_f=kappa**2/2, c_f = 1/2, d_f=kappa**2/2, e_f=-kappa**2, gamma=0,
@@ -472,41 +508,120 @@ results.to_csv(os.path.join(PATH_IMAGES,'MFG_error.csv'))
 
 
 
-# we compare both methods
-#kappa = 1
-#flocking_MFG = MFG(b=0, c=1, m=0, sigma=1, 
-#                   b_f=kappa**2/2, c_f = 1/2, d_f=kappa**2/2, e_f=-kappa**2, gamma=0,
-#                   init_t=9, T=10, timestep = 0.005, solver='Explicit',
-#                   init_p1_alpha = lambda t: -0.5)
-#pol = flocking_MFG.solve_policy()
-#flocking_MFG.update_law(pol)
-#pol = flocking_MFG.solve_policy()
-#flocking_MFG.update_law(pol)
-#diff = norm(flocking_MFG.law[-1]-flocking_MFG.law[-2])
-#alphas_it = []
-#while diff>0.0001:
-#    print(diff)
-#    pol = flocking_MFG.solve_policy()
-#    flocking_MFG.update_law(pol)
-#    diff = norm(flocking_MFG.law[-1]-flocking_MFG.law[-2])
-#    alphas_it.append(np.array([pol.get_alpha(x_i) for x_i in x]) )
-#print('success')
-#pol = flocking_MFG.solve_policy()   # we get the alphas with the las value of the law
-#final_law = flocking_MFG.law[-1]
-#final_alpha = np.array([pol.get_alpha(x_i) for x_i in x]) 
-#alphas_it.append(final_alpha)
-#
-#flocking_solution = flocking_model(law=final_law, h=0.005, kappa=kappa, sigma=1, t0=9,T=10)  
-#alpha_flocking = np.array([flocking_solution.get_alpha(x_i) for x_i in x]) 
-#
-#norm(final_alpha-alpha_flocking)
-#
-#
-#[norm(alpha-alpha_flocking) for alpha in alphas_it]
-#    
-    
-    
-    
+# we compare both methods. Using explicit solver
+kappa = 0.5
+x = np.linspace(0,100,101)
+flocking_MFG = MFG(b=0, c=1, m=0, sigma=1, 
+                   b_f=kappa**2/2, c_f = 1/2, d_f=kappa**2/2, e_f=-kappa**2, gamma=0,
+                   init_t=9, T=10, timestep = 0.00005, solver='Explicit',
+                   init_p1_alpha = lambda t: -0.5)
+pol = flocking_MFG.solve_policy()
+alphas_it = []
+alphas_it.append(np.array([pol.get_alpha(x_i) for x_i in x]) )
+flocking_MFG.update_law(pol)
+pol = flocking_MFG.solve_policy()
+alphas_it.append(np.array([pol.get_alpha(x_i) for x_i in x]) )
+flocking_MFG.update_law(pol)
+diff = norm(flocking_MFG.law[-1]-flocking_MFG.law[-2])
+while diff>0.00001:
+    print(diff)
+    pol = flocking_MFG.solve_policy()
+    flocking_MFG.update_law(pol)
+    diff = norm(flocking_MFG.law[-1]-flocking_MFG.law[-2])
+    alphas_it.append(np.array([pol.get_alpha(x_i) for x_i in x]) )
+print('success')
+pol = flocking_MFG.solve_policy()   # we get the alphas with the las value of the law
+final_law = flocking_MFG.law[-1]
+final_alpha = np.array([pol.get_alpha(x_i) for x_i in x]) 
+alphas_it.append(final_alpha)
+
+flocking_solution = flocking_model(law=final_law, h=0.00005, kappa=kappa, sigma=1, t0=9,T=10)  
+alpha_flocking = np.array([flocking_solution.get_alpha(x_i) for x_i in x]) 
+
+norm(final_alpha-alpha_flocking)
+
+
+error = [norm(alpha-alpha_flocking) for alpha in alphas_it]
+x_plot = np.arange(1,len(error)+1)
+
+import matplotlib.pyplot as plt
+fig =plt.figure()
+ax = fig.add_subplot(111)
+ax.plot(x_plot, error, '-o')
+ax.set_xlabel('iteration')
+ax.set_ylabel('error')
+ax.set_title('Evolution of Optimal strategy error')
+plt.show()
+fig.savefig(os.path.join(PATH_IMAGES,'MFG_error.png'))
+
+
+
+# We update policy and then update law and then policy and then law etc
+kappa = 0.5
+x = np.linspace(0,100,101)
+alphas_it = []
+flocking_MFG = MFG(b=0, c=1, m=0, sigma=1, 
+                   b_f=kappa**2/2, c_f = 1/2, d_f=kappa**2/2, e_f=-kappa**2, gamma=0,
+                   init_t=9, T=10, timestep = 0.00005, solver='Explicit',
+                   init_p1_alpha = lambda t: -0.5)
+pol = flocking_MFG.policy_one_step()   # we do one step of policy iteration
+alphas_it.append(np.array([pol.get_alpha (x_i) for x_i in x]) )
+flocking_MFG.update_law(pol) # we update the law
+pol.law_grid = flocking_MFG.law[-1]   # we update the lawgrid at the policy iteration
+diff = norm(flocking_MFG.law[-1]-flocking_MFG.law[-2])
+while diff>0.00001:
+    print(diff)
+    pol = flocking_MFG.policy_one_step(pol)
+    alphas_it.append(np.array([pol.get_alpha(x_i) for x_i in x]) )
+    flocking_MFG.update_law(pol)
+    pol.law_grid = flocking_MFG.law[-1]
+    diff = norm(flocking_MFG.law[-1]-flocking_MFG.law[-2])
+print('success')
+final_law = flocking_MFG.law[-1]
+flocking_solution = flocking_model(law=final_law, h=0.00005, kappa=kappa, sigma=1, t0=9,T=10)  
+alpha_flocking = np.array([flocking_solution.get_alpha(x_i) for x_i in x]) 
+norm(alphas_it[-1]-alpha_flocking)
+
+error = [norm(alpha-alpha_flocking) for alpha in alphas_it]
+x_plot = np.arange(1,len(error)+1)
+
+fig =plt.figure()
+ax = fig.add_subplot(111)
+ax.plot(x_plot, error, '-o')
+ax.set_xlabel('iteration')
+ax.set_ylabel('error')
+ax.set_title('Evolution of Optimal strategy error')
+plt.show()
+fig.savefig(os.path.join(PATH_IMAGES,'MFG_One_step_error.png'))
+
+import pandas as pd
+results = pd.DataFrame({'error':error, 'iteration':x_plot})
+results.to_csv(os.path.join(PATH_IMAGES,'MFG_error_update_law_update_value.csv'))
+
+
+
+# we plot both results
+import os
+import pandas as pd
+
+os.chdir(PATH_IMAGES)
+df_law = pd.read_csv('MFG_error.csv')
+df_update_law_update_value = pd.read_csv('MFG_error_update_law_update_value.csv')
+
+#df_law = df_law[df_law.iteration>=3]
+#df_update_law_update_value  = df_update_law_update_value[df_update_law_update_value.iteration>=3]
+fig =plt.figure()
+ax = fig.add_subplot(111)
+ax.plot(df_law.iteration.values, df_law.error.values, 'b-o', label='Law updated after convergene of policy iteration')
+ax.plot(df_update_law_update_value.iteration.values, df_update_law_update_value.error.values, 'r-o', label='law updated after one policy iteration')
+ax.set_xlabel('iteration')
+ax.set_ylabel('error')
+ax.set_xlim(3,10)
+ax.set_ylim(0,20)
+ax.set_title('Evolution of Optimal strategy error')
+ax.legend()
+plt.show()
+fig.savefig('Comparison_law_iteration.png')    
     
 
 

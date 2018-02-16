@@ -75,6 +75,18 @@ norm(sol_grid-sol)   # much better this solution than Euler method
 # we try to make it faster by doing clever things with the integrals
 # we calculate the integrals bit by bit and then do a cumsum.
 # like this the algorithm will be much faster
+timestep = 0.0001
+t0 = 8
+T = 10
+time = np.arange(t0,T+timestep*0.1,timestep)
+
+a0_lambda = lambda t: t
+a1_lambda = lambda t: 2*t
+
+a0 = np.array([a0_lambda(t) for t in time])
+a1 = np.array([a1_lambda(t) for t in time])
+y_T = 10
+
 integrand_const = -a1
 val_integral_const = simps(integrand_const, time)
 sol = np.zeros_like(time)
@@ -112,16 +124,11 @@ solution_ode = e_integral4*(y_T*math.exp(val_integral_const)-val_integral2)
 
     
     
-
-
-
-
-
-
 # WITH INITIAL CONDITION AND NOT FINAL CONDITION
-timestep = 0.005
+# very fast implementation
+timestep = 0.0001
 t0 = 0
-T = 1
+T = 2
 time = np.arange(t0,T+timestep*0.1,timestep)
 
 a0_lambda = lambda t: t
@@ -130,19 +137,47 @@ y_0 = 0
 a0 = np.array([a0_lambda(t) for t in time])
 a1 = np.array([a1_lambda(t) for t in time])
 sol = np.zeros_like(time)
-for i in range(len(time)):
-    integrand1 = -a1[:i+1]
-    val_integral1 = simps(integrand1, time[:i+1])
-    integrand2 = np.copy(a0[:i+1])
-    for j in range(i):
-        integrand3 = -np.copy(a1[:j+1])
-        val_integral3 = simps(integrand3, time[:j+1])
-        integrand2[j] = integrand2[j]*math.exp(val_integral3)
-    val_integral2 = simps(integrand2, time[:i+1])
-    sol[i] = math.exp(-val_integral1)*(y_0+val_integral2)
-    
-expl_sol = lambda t: 0.5*math.exp(t**2)-1/2
-sol_grid = np.array([expl_sol(t) for t in time])
 
-norm(sol-sol_grid)
+val_integral1 = np.zeros_like(time)
+val_integral2 = np.zeros_like(time)
+val_integral3 = np.zeros_like(time)
+
+# we fill val_integral1
+for i in range(1, len(time)):
+    integrand1 = -np.copy(a1[i-1:i+1])
+    val_integral1[i] = trapz(integrand1, time[i-1:i+1])
+val_integral1 = np.cumsum(val_integral1)
+e_integral1 = np.exp(-val_integral1)
+
+# we fill val_integral3
+for i in range(1, len(time)):
+    val_integral3[i] = trapz(-a1[i-1:i+1], time[i-1:i+1])
+val_integral3 = np.cumsum(val_integral3)
+
+# we get integrand2
+integrand2 = a0 * np.exp(val_integral3)
+for i in range(1, len(time)):
+    val_integral2[i] = trapz(integrand2[i-1:i+1], time[i-1:i+1])
+val_integral2 = np.cumsum(val_integral2) 
+
+solution_ode = e_integral1*(y_0 + val_integral2)
+
+   
+timestep = 0.0001
+t0 = 0
+T = 2
+time = np.arange(t0,T+timestep*0.1,timestep)
+
+a0_lambda = lambda t: t
+a1_lambda = lambda t: 2*t
+
+a0 = np.array([a0_lambda(t) for t in time])
+a1 = np.array([a1_lambda(t) for t in time])
+sol_grid = 0.5*np.exp(time**2)-0.5
+
+norm(sol_grid-solution_ode)
+
+
+
+
 
