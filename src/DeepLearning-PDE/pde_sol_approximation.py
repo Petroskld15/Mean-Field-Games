@@ -5,6 +5,7 @@ from torch.autograd import Variable
 import torch.nn as nn
 import torch.autograd as autograd
 from functools import reduce
+import shutil
 
 def hessian():
     """
@@ -31,15 +32,41 @@ def hessian():
     return 1
 
 
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+
+def save_checkpoint(state, it, is_best):
+    filename = 'checkpoint_w_it' + str(it) + '.pth.tar'
+    torch.save(state, filename)
+    if is_best:
+        shutil.copyfile(filename, 'model_best_long.pth.tar')
+
 
 class Model_PDE(nn.Module):
     
-    def __init__(self, b=0.5, c=0.5, sigma=1, b_f=0.5, c_f=0.9, gamma=1):
+    def __init__(self, b=0.5, c=0.5, sigma=1, b_f=0.5, c_f=0.9, gamma=0.1):
         super(Model_PDE, self).__init__()
         # Layers of the network
-        self.i2h1 = nn.Sequential(nn.Linear(2,50,bias=True), nn.Sigmoid())
-        self.i2h2 = nn.Sequential(nn.Linear(2,50, bias=True), nn.Tanh())
-        self.h2o = nn.Linear(50,1,bias=True)
+        self.i2h1 = nn.Sequential(nn.Linear(2,100,bias=True), nn.Sigmoid())
+        self.i2h2 = nn.Sequential(nn.Linear(2,100, bias=True), nn.Sigmoid())
+        #self.h2h = nn.Sequential(nn.Linear(50,50,bias=True), nn.ReLU)
+        self.h2o = nn.Linear(100,1,bias=True)
+        
         
         #Parameters of the PDE
         self.b = b
@@ -75,14 +102,112 @@ class Model_PDE(nn.Module):
         df_dxdx = grad_df_dx[:,1]
         df_dxdt = grad_df_dx[:,0]
         
-#        grad_df_dt = []    
-#        for batch in range(df_dt.size()[0]):
-#            grad_df_dt.append(torch.autograd.grad(grad_df_dt[batch], input, create_graph=True)[0])
-#        grad_df_dt = reduce(lambda x,y: x+y, grad_df_dt)        
-#        df_dtdx = grad_df_dx[:,1]
-#        df_dtdt = grad_df_dx[:,0]
-        alpha = -0.5*x[:,1] + 0.1 # guess we had for alpha
-        pde = self.b_f*x[:,1]**2 + df_dt + 0.5*self.sigma**2*df_dxdx + self.b*x[:,1]*df_dx + self.c*alpha*df_dx + self.c_f*alpha**2
+        pde = self.b_f*x[:,1]**2 + df_dt + 0.5*self.sigma**2*df_dxdx + self.b*x[:,1]*df_dx - self.c**2/(4*self.c_f)*(df_dx)**2
+        return output, pde
+    
+    
+class Model_PDE_2(nn.Module):
+    
+    def __init__(self, b=0.5, c=0.5, sigma=1, b_f=0.5, c_f=0.9, gamma=0.1):
+        super(Model_PDE_2, self).__init__()
+        # Layers of the network
+        self.i2h = nn.Sequential(nn.Linear(2,1000,bias=True), nn.Tanh())
+        self.h2o = nn.Linear(1000,1,bias=True)
+        
+        
+        #Parameters of the PDE
+        self.b = b
+        self.c = c
+        self.sigma = sigma
+        self.b_f = b_f
+        self.c_f = c_f
+        self.gamma = gamma
+        
+    def forward(self, x):
+        # Design of neural network
+        h = self.i2h(x)
+        output = self.h2o(h)
+        
+        # PDE to calculate the error
+        # we get df/dx and df/dt where f(t,x) is the approimation of the
+        
+        # PDE solution given by our neural network
+        l = []
+        for row in range(output.size()[0]):
+            input_grad = torch.autograd.grad(output[row], x, create_graph=True)[0]
+            l.append(input_grad)
+        grad_f = reduce(lambda x,y: x+y, l)
+        df_dx = grad_f[:,1]
+        df_dt = grad_f[:,0]
+        # we get second derivatives
+        grad_df_dx = []    
+        for batch in range(df_dx.size()[0]):
+            grad_df_dx.append(torch.autograd.grad(df_dx[batch], x, create_graph=True)[0])
+        grad_df_dx = reduce(lambda x,y: x+y, grad_df_dx)        
+        df_dxdx = grad_df_dx[:,1]
+        df_dxdt = grad_df_dx[:,0]
+        
+        pde = self.b_f*x[:,1]**2 + df_dt + 0.5*self.sigma**2*df_dxdx + self.b*x[:,1]*df_dx - self.c**2/(4*self.c_f)*(df_dx)**2
+        return output, pde
+
+class Model_PDE_3(nn.Module):
+    
+    def __init__(self, b=0.5, c=0.5, sigma=1, b_f=0.5, c_f=0.9, gamma=0.1):
+        super(Model_PDE_3, self).__init__()
+        # Layers of the network
+        self.i_h1 = nn.Sequential(nn.Linear(2,20,bias=True), nn.Tanh())
+        self.h1_h2 = nn.Sequential(nn.Linear(20,20,bias=True), nn.Tanh())
+        self.h2_h3 = nn.Sequential(nn.Linear(20,20,bias=True), nn.Tanh())
+        self.h3_h4 = nn.Sequential(nn.Linear(20,20,bias=True), nn.Tanh())
+        self.h4_h5 = nn.Sequential(nn.Linear(20,20,bias=True), nn.Tanh())
+        self.h5_h6 = nn.Sequential(nn.Linear(20,20,bias=True), nn.Tanh())
+        self.h6_h7 = nn.Sequential(nn.Linear(20,20,bias=True), nn.Tanh())
+        self.h7_h8 = nn.Sequential(nn.Linear(20,20,bias=True), nn.Tanh())
+        self.h8_h9 = nn.Sequential(nn.Linear(20,20,bias=True), nn.Tanh())
+        self.h9_o = nn.Linear(20,1,bias=True)
+        
+        
+        #Parameters of the PDE
+        self.b = b
+        self.c = c
+        self.sigma = sigma
+        self.b_f = b_f
+        self.c_f = c_f
+        self.gamma = gamma
+        
+    def forward(self, x):
+        # Design of neural network
+        h1 = self.i_h1(x)
+        h2 = self.h1_h2(h1)
+        h3 = self.h2_h3(h2)
+        h4 = self.h3_h4(h3)
+        h5 = self.h4_h5(h4)
+        h6 = self.h5_h6(h5)
+        h7 = self.h6_h7(h6)
+        h8 = self.h7_h8(h7)
+        h9 = self.h8_h9(h8)
+        output = self.h9_o(h9)
+        
+        # PDE to calculate the error
+        # we get df/dx and df/dt where f(t,x) is the approimation of the
+        
+        # PDE solution given by our neural network
+        l = []
+        for row in range(output.size()[0]):
+            input_grad = torch.autograd.grad(output[row], x, create_graph=True)[0]
+            l.append(input_grad)
+        grad_f = reduce(lambda x,y: x+y, l)
+        df_dx = grad_f[:,1]
+        df_dt = grad_f[:,0]
+        # we get second derivatives
+        grad_df_dx = []    
+        for batch in range(df_dx.size()[0]):
+            grad_df_dx.append(torch.autograd.grad(df_dx[batch], x, create_graph=True)[0])
+        grad_df_dx = reduce(lambda x,y: x+y, grad_df_dx)        
+        df_dxdx = grad_df_dx[:,1]
+        df_dxdt = grad_df_dx[:,0]
+        
+        pde = self.b_f*x[:,1]**2 + df_dt + 0.5*self.sigma**2*df_dxdx + self.b*x[:,1]*df_dx - self.c**2/(4*self.c_f)*(df_dx)**2
         return output, pde
     
 
@@ -94,32 +219,29 @@ def sample(time_interval, xlim, batch_size, gamma):
     x = xmin + torch.rand([batch_size, 1])*(xmax-xmin)
     points = torch.cat([t,x],dim=1)
     
-    terminal_points_x = xmin + torch.rand([int(batch_size*0.1), 1])*(xmax-xmin)
+    terminal_points_x = xmin + torch.rand([batch_size, 1])*(xmax-xmin)
     terminal_points_t = torch.ones_like(terminal_points_x)*end_time
     terminal_points = torch.cat([terminal_points_t,terminal_points_x], dim=1)
     
     return points, terminal_points
 
 
-model = Model_PDE()
 
 
-
-def train():
-    batch_size = 20
-    n_iter = 1000
-    batch_size = 20
+def train_fixed_iterations():
+    batch_size = 10
+    n_iter = 5000
     time_interval = (0,10)
     xlim = (8,10)
-    gamma = 1
+    gamma = 2
     model = Model_PDE()
     criterion = nn.MSELoss()
-    base_lr = 0.0002
+    base_lr = 0.001
     optimizer = torch.optim.SGD(model.parameters(), lr = base_lr, momentum=0.9)
     #optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)
     for it in range(n_iter):
         # learning rate decay
-        lr = base_lr * (0.5 ** (it // 50))
+        lr = base_lr * (0.5 ** (it // 100))
         for param_group in optimizer.state_dict()['param_groups']:
             param_group['lr'] = lr
         
@@ -137,7 +259,7 @@ def train():
         # the output of the model is solution of pde, and the pde itself for the loss function
         output, PDE = model(data_batch)
         output_terminal, _ = model(terminal_points)
-        loss = criterion(PDE, target) #+ criterion(output_terminal, target_terminal)
+        loss = criterion(PDE, target) + criterion(output_terminal, target_terminal)
 
         # we get the the gradients of the loss function by backpropagation
         loss.backward()
@@ -148,25 +270,125 @@ def train():
         print("iteration: [{it}/{n_iter}]\t loss: {loss}".format(it=it, n_iter=n_iter, loss=loss.data[0]))        
         
         
+
+def iterate(model, criterion, optimizer, losses, time_interval, xlim, batch_size, gamma):
+    optimizer.zero_grad()
+    data_batch, terminal_points = sample(time_interval, xlim, batch_size, gamma)
+    data_batch = Variable(data_batch, requires_grad=True)
+    terminal_points = Variable(terminal_points, requires_grad=True)
+    
+    # the target for the loss function is a vector of zeros, and terminal values        
+    target = Variable(torch.zeros(batch_size))
+    target_terminal = Variable(gamma*terminal_points.data[:,1]**2)
+    
+    # the output of the model is solution of pde, and the pde itself for the loss function
+    output, PDE = model(data_batch)
+    output_terminal, _ = model(terminal_points)
+    loss = criterion(PDE, target) + criterion(output_terminal, target_terminal)    
+
+    # we get the the gradients of the loss function by backpropagation
+    loss.backward()
+    # optimization step
+    optimizer.step()
+    
+    losses.update(loss.data[0])
+    
+    
+
+def train():
+    batch_size = 10
+    #n_iter = 5000
+    time_interval = (0,1)
+    xlim = (8,10)
+    gamma = 2
+    model = Model_PDE_3()
+    criterion = nn.MSELoss()
+    base_lr = 0.005
+    optimizer = torch.optim.SGD(model.parameters(), lr = base_lr, momentum=0.9)
+
+    losses = AverageMeter()
+
+    # first iteration
+    iterate(model, criterion, optimizer, losses, time_interval, xlim, batch_size, gamma)
+    n_iter = 1
+    best_loss = losses.val
+    
+    while losses.val>1:
+        n_iter+=1
+        lr = base_lr * (0.5 ** (n_iter // 100))
+        for param_group in optimizer.state_dict()['param_groups']:
+            param_group['lr'] = lr
+        iterate(model, criterion, optimizer, losses, time_interval, xlim, batch_size, gamma)
         
+        print("iteration: [{it}]\t loss: {loss:.3f}\t avg_loss: {avg_loss:.3f}".format(it=n_iter, loss=losses.val, avg_loss=losses.avg))  
+            
+
+def train_LBFGS():
+    batch_size = 10
+    time_interval = (0,1)
+    xlim = (8,10)
+    gamma = 2
+    model = Model_PDE_3()
+    criterion = nn.MSELoss()
+    base_lr = 0.8
+    n_iter = 10
+    optimizer = torch.optim.LBFGS(model.parameters(),lr=base_lr, max_iter=20)    
+    
+    # we load all the data
+    data_batch, terminal_points = sample(time_interval, xlim, batch_size, gamma)
+    data_batch = Variable(data_batch, requires_grad=True)
+    terminal_points = Variable(terminal_points, requires_grad=True)
+    
+    # the target for the loss function is a vector of zeros, and terminal values        
+    target = Variable(torch.zeros(batch_size))
+    target_terminal = Variable(gamma*terminal_points.data[:,1]**2)
+
+
+
+    for it in range(n_iter):
         
+        def closure():
+            optimizer.zero_grad()
+            # the output of the model is solution of pde, and the pde itself for the loss function
+            output, PDE = model(data_batch)
+            output_terminal, _ = model(terminal_points)
+            loss = criterion(PDE, target) + criterion(output_terminal, target_terminal)    
+            loss.backward()
+            print("iteration: [{it}/{n_iter}]\t loss: {loss}".format(it=it, n_iter=n_iter, loss=loss.data[0]))
+            return loss
+        lr = base_lr * (0.5 ** (it // 5))
+        for param_group in optimizer.state_dict()['param_groups']:
+            param_group['lr'] = lr
+            
+        optimizer.step(closure)
+    
+    # testing
+    data_batch, terminal_points = sample(time_interval, xlim, 1, gamma)
+    data_batch = Variable(data_batch, requires_grad=True)
+    terminal_points = Variable(terminal_points, requires_grad=True)
+    output, PDE = model(data_batch)
+    output_terminal, _ = model(terminal_points)
+    
+    # we compute alpha from value function: 
+    l = []
+    for row in range(output.size()[0]):
+        input_grad = torch.autograd.grad(output[row], data_batch, create_graph=True)[0]
+        l.append(input_grad)
+    grad_f = reduce(lambda x,y: x+y, l)
+    df_dx = grad_f[:,1]
+    alpha = -1/(2*model.c_f)*model.c*df_dx
+    
+    
+    
+            
         
-# PREPARING FOR TRAINING
-        
+# debugging lines
 
-
-        
-
-
-
-# code tests
-
-m = nn.Linear(2, 30)
+m = nn.Linear(2, 1)
 input = autograd.Variable(torch.randn(20, 2), requires_grad=True)
 output = m(input)
-m2 = nn.Linear(30,1)
-output = m2(output)
 output = nn.Sigmoid()(output)
+print(output)
 print(output.size())
 
 l = []
