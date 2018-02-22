@@ -1,0 +1,95 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Feb 22 09:23:52 2018
+
+@author: pkyliako
+"""
+# First trial for the cyber security problem described in page 646 - 650
+
+import numpy as np
+from scipy.integrate import odeint
+import matplotlib.pyplot as plt
+
+
+PATH_IMAGES = 'Users\pkyliako\Projects' 
+
+#Initialize number of infected and susceptible of the protected computers
+Defended_Infected0, Defended_Susceptible0 =333,333
+#Initialize number of infected and susceptible of the unprotected computers
+undefended_Infected0, undefended_Susceptible0 =1,333
+
+N=Defended_Infected0+Defended_Susceptible0+undefended_Infected0+undefended_Susceptible0
+numbers=[Defended_Infected0,Defended_Susceptible0,undefended_Infected0,undefended_Susceptible0]
+
+
+#Define the infection rates from defended to defended computers in the network 
+Inf_rate_B_DD=0.4
+#Define the infection rates from undefended to defended computers in the network 
+Inf_rate_B_UD=0.4
+#Define the infection rates from undefended to undefended computers in the network 
+Inf_rate_B_UU=0.3
+#Define the infection rates from defended to undefended computers in the network 
+Inf_rate_B_DU=0.3
+#Define the infection rates of an undefended computer under direct attack  
+Inf_rate_U= 0.4
+#Define the infection rates of an defended computer under direct attack  
+Inf_rate_D= 0.4
+#Define the recovery rates of an defended computer under direct attack  
+Rec_rate_D=0.4
+#Define the recovery rates of an undefended computer under direct attack  
+Rec_rate_U=0.4
+#Cost of being Infected 
+Cost_inf_KI=0.5
+#Cost of being defended
+Cost_inf_KD=0.3
+#Update time lambda or speed of responce
+Update_time_l=0.8
+# Attack Intensity later the decision of the major player
+v_H=0.6
+#Initialize probability distribution of states
+#m=[1/4,1/4,1/4,1/4]
+m=[1,0,0,0]
+# Set of Actions 0 stands for stay at the current state and 1 stands for trying to switch
+a=[0,1]
+
+
+Strategy=[1,0,1,0]
+
+# A grid of time points (in days)
+t = np.linspace(0, 1.5, 10**5)
+
+
+def derivone(y,t,Strategy,Inf_rate_B_DD,Inf_rate_B_UD,Inf_rate_B_UU,Inf_rate_B_DU, Inf_rate_U,Inf_rate_D,Rec_rate_D,Rec_rate_U,v_H,Update_time_l):
+    S, I, R, U = y
+    dSdt = I*Inf_rate_D*v_H-S*Rec_rate_D+S*I*Inf_rate_B_DD+ R*I*Inf_rate_B_UD+Update_time_l*(R*Strategy[2]-S*Strategy[0])
+    dIdt =-I*Inf_rate_D*v_H+S*Rec_rate_D-S*I*Inf_rate_B_DD- R*I*Inf_rate_B_UD+Update_time_l*(U*Strategy[3]-I*Strategy[1])
+    dRdt = U*Inf_rate_U*v_H-R*Rec_rate_U+S*U*Inf_rate_B_DU+ R*U*Inf_rate_B_UU-Update_time_l*(R*Strategy[2]-S*Strategy[0])
+    dUdt = -U*Inf_rate_U*v_H+R*Rec_rate_U-S*U*Inf_rate_B_DU- R*U*Inf_rate_B_UU-Update_time_l*(U*Strategy[3]-I*Strategy[1])
+    return dSdt, dIdt, dRdt,dUdt
+
+
+# Integrate the SIR equations over the time grid, t.
+ret = odeint(derivone, numbers, t, args=(Strategy,Inf_rate_B_DD,Inf_rate_B_UD,Inf_rate_B_UU,Inf_rate_B_DU, Inf_rate_U,Inf_rate_D,Rec_rate_D,Rec_rate_U,v_H,Update_time_l))
+S, I, R, U = ret.T
+
+# Plots 
+fig = plt.figure(facecolor='w')
+ax = fig.add_subplot(111, axis_bgcolor='#dddddd', axisbelow=True)
+ax.plot(t, S/N, 'b', alpha=0.5, lw=2, label='DI')
+ax.plot(t, I/N, 'r', alpha=0.5, lw=2, label='DS')
+ax.plot(t, R/N, 'g', alpha=0.5, lw=2, label='UI')
+ax.plot(t, U/N, 'y', alpha=0.5, lw=2, label='US')
+ax.set_xlabel('Time /days')
+ax.set_ylabel('Number (1000s)')
+ax.set_ylim(-0.1,1.1)
+ax.yaxis.set_tick_params(length=0)
+ax.xaxis.set_tick_params(length=0)
+ax.grid(b=True, which='major', c='w', lw=2, ls='-')
+legend = ax.legend()
+legend.get_frame().set_alpha(0.5)
+for spine in ('top', 'right', 'bottom', 'left'):
+    ax.spines[spine].set_visible(False)
+plt.show()
+
+
+
